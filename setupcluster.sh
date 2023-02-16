@@ -1,7 +1,7 @@
 #!/bin/bash
 # This script has been updated to work with Ubuntu 22.04 LTS (Jammy)
 # Loding cilium version 1.12.5
-
+# Change these addresses to the actual ones you will be using! IMPORTANT!
 export master='192.168.0.23'
 export node1='192.168.0.24'
 
@@ -16,13 +16,19 @@ sudo hostnamectl
 #Install helm on master
 sudo snap install helm --classic
 
-#Install containerd
+#Install containerd the easy way...
 sudo apt-get install containerd -y
+# OR... ge the most up-to-date bits by following....
+# https://github.com/containerd/containerd/blob/main/docs/getting-started.md
+# https://kubernetes.io/docs/setup/production-environment/container-runtimes/#containerd
+# be sure to install runc, optionally install cni plugins however this is about installing cilium
+# and configure the cgroup drivers...
+# https://kubernetes.io/docs/setup/production-environment/container-runtimes/#containerd-systemd
 
 #Configure containerd and start the service
 sudo mkdir -p /etc/containerd
 sudo su -
-containerd config default  /etc/containerd/config.toml
+containerd config default > /etc/containerd/config.toml
 exit
 
 #Next, install Kubernetes. First you need to add the repository's GPG key with the command:
@@ -39,26 +45,29 @@ sudo nano /etc/sysctl.conf
     #Add this line: net.bridge.bridge-nf-call-iptables = 1
 
 sudo -s
-#Allow packets arriving at the node's network interface to be forwaded to pods. 
+#Allow packets arriving at the node's network interface to be forwaded to pods.
 sudo echo '1' > /proc/sys/net/ipv4/ip_forward
 exit
 
 #Reload the configurations with the command:
 sudo sysctl --system
 
-#Load overlay and netfilter modules 
+#Load overlay and netfilter modules
 sudo modprobe overlay
 sudo modprobe br_netfilter
-  
-#Disable swap by opening the fstab file for editing 
+
+#Disable swap by opening the fstab file for editing
 sudo nano /etc/fstab
     #Comment out "/swap.img"
 
-#Disable swap from comand line also 
+#Disable swap from comand line also
 sudo swapoff -a
 
 #Pull the necessary containers with the command:
 sudo kubeadm config images pull
+
+# when all of this is done, good time to...
+sync;reboot
 
 #************************************************** This section must be run only on the Master node*************************************************************************************************
 
@@ -87,7 +96,8 @@ rm cilium-linux-amd64.tar.gz{,.sha256sum}
 helm repo add cilium https://helm.cilium.io/
 
 #Deploy Cilium release via Helm:
-helm install cilium cilium/cilium --version 1.12.5 \
+# !!!!!!!!!!!!!!!! make sure $master is set !!!!!!!!!!!!!!!
+helm install cilium cilium/cilium --version 1.12.7 \
     --namespace kube-system \
     --set kubeProxyReplacement=strict \
     --set k8sServiceHost=$master \
@@ -119,7 +129,7 @@ scp -r $HOME/.kube gary@$node1:/home/gary
 
 #**************************************************Cluster installation tests*******************************************************
 #Optionally untaintthe master node
-kubectl taint node $master node-role.kubernetes.io/master-
+kubectl taint node $master node-role.kubernetes.io/control-plane-
 
 #Schedule a Kubernetes deployment using a container from Google samples
 kubectl create deployment hellokubectl taint node $master node-role.kubernetes.io/master--world --image=gcr.io/google-samples/hello-app:1.0
@@ -189,5 +199,14 @@ hubble status
 #Setup Hubble UI
 # I found that in order to enable the hubble ui, you need to first perform `cilium hubble disable` if you have done this and then perform the following:
 cilium hubble enable --ui
+
+# the following command will open an http port on the control-plane's localhost interface, in order
+# to view this on your REMOTE desktop machine, you need to connect the the control-plane node with ssh
+# port forwarding, like this...
+# ssh -L 8888:localhost:12000 user@control-plane.example.com
+# where 8888 is the port on your "desktop" 12000 is the hubble port on the control plane that user is logging into
+# you also need to have the parameter:
+# GatewayPorts yes
+# set in the control-plane nodes /etc/ssh/sshd_config file. Be sure to restart sshd if you have to make a change
 
 cilium hubble ui
