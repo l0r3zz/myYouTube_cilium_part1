@@ -40,6 +40,7 @@ sudo apt-add-repository "deb http://apt.kubernetes.io/ kubernetes-xenial main"
 #Install all of the necessary Kubernetes components with the command:
 sudo apt-get install kubeadm kubelet kubectl -y
 
+# NOTE: this is the original instructions on how to set kernel parameters, see below for an easier way...
 #Modify "sysctl.conf" to allow Linux Node’s iptables to correctly see bridged traffic
 sudo nano /etc/sysctl.conf
     #Add this line: net.bridge.bridge-nf-call-iptables = 1
@@ -55,7 +56,24 @@ sudo sysctl --system
 #Load overlay and netfilter modules
 sudo modprobe overlay
 sudo modprobe br_netfilter
-
+############################ easier way ###############################################
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+sudo modprobe overlay
+sudo modprobe br_netfilter
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+sudo sysctl --system #reload and save changes
+# now verify...
+lsmod | grep br_netfilter
+lsmod | grep overlay
+sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward
+##########################################################################################
 #Disable swap by opening the fstab file for editing
 sudo nano /etc/fstab
     #Comment out "/swap.img"
